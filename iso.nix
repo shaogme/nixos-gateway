@@ -1,4 +1,4 @@
-{ hostPath ? ./. }:
+{ hostPath }:
 let
   # 统一处理相对路径或绝对路径
   resolvedHostPath =
@@ -15,18 +15,35 @@ let
   };
   lib = pkgs.lib;
 
-  # 1. 评估目标主机系统配置
+  # 1. 评估目标主机系统配置 (如 virtual-box/coding) 并构建 Disko Raw 镜像
   targetHost = (import (sources.nixpkgs + "/nixos/lib/eval-config.nix") {
     inherit pkgs;
     modules = [ (resolvedHostPath + "/configuration.nix") ];
   });
 
-  targetToplevel = targetHost.config.system.build.toplevel;
-  diskoScript = targetHost.config.system.build.diskoScript;
+  targetDiskoImages = targetHost.config.system.build.diskoImages;
   targetDisk = targetHost.config.exts.hardware.disk.btrfs.device;
   hostName = targetHost.config.networking.hostName;
 
-  # 2. 评估全自动无人值守安装 ISO
+  # 2. 将 raw 镜像压缩为 raw.zst 并生成 bmap 映射表
+  compressedImage = pkgs.runCommand "compressed-${hostName}-raw-image" {
+    nativeBuildInputs = [ pkgs.zstd pkgs.bmaptool ];
+  } ''
+    mkdir -p $out
+    RAW_SRC=$(find -L ${targetDiskoImages} -name "*.raw" | head -n 1)
+    if [ -z "$RAW_SRC" ] || [ ! -f "$RAW_SRC" ]; then
+      echo "ERROR: Raw image not found in ${targetDiskoImages}"
+      exit 1
+    fi
+
+    echo ">> Generating bmap block map file..."
+    bmaptool create -o $out/system.bmap "$RAW_SRC"
+
+    echo ">> Compressing raw image with zstd (level 19)..."
+    zstd -19 -T0 "$RAW_SRC" -o $out/system.raw.zst
+  '';
+
+  # 3. 评估全自动无人值守流式安装 ISO
   installerIso = (import (sources.nixpkgs + "/nixos/lib/eval-config.nix") {
     inherit pkgs;
     modules = [
@@ -40,15 +57,13 @@ let
         systemd.targets.hibernate.enable = false;
         systemd.targets.hybrid-sleep.enable = false;
 
-        # 将目标系统的所有依赖闭包预置到 ISO 本地 store，实现离线安装
-        isoImage.storeContents = [ targetToplevel ];
         image.baseName = lib.mkForce "nixos-autoinstall-${hostName}";
 
-        # 自动化安装 Service
+        # 自动化流式刷盘 Service
         systemd.services.nixos-autoinstall = {
-          description = "Unattended NixOS & Disko Auto-Installer for ${hostName}";
+          description = "Unattended Fast Raw Streaming Installer for ${hostName}";
           wantedBy = [ "multi-user.target" ];
-          after = [ "local-fs.target" "network.target" ];
+          after = [ "local-fs.target" ];
 
           serviceConfig = {
             Type = "oneshot";
@@ -57,9 +72,9 @@ let
           };
 
           path = with pkgs; [
-            config.nix.package
-            diskoScript
-            nixos-install-tools
+            bmaptool
+            zstd
+            gptfdisk
             util-linux
             systemd
             coreutils
@@ -69,7 +84,7 @@ let
             set -euo pipefail
 
             echo "======================================================"
-            echo " Starting Unattended Installation for: ${hostName}"
+            echo " Starting Fast Raw Streaming Installer for: ${hostName}"
             echo " Target Disk: ${targetDisk}"
             echo "======================================================"
 
@@ -88,22 +103,29 @@ let
               exit 1
             fi
 
-            # 2. 运行 Disko 完成 GPT 分区、Btrfs 格式化与子卷挂载
-            echo ">> Running Disko partition and mount script..."
-            ${diskoScript}
+            # 2. 流式直写 raw 镜像至目标物理磁盘
+            RAW_IMAGE="${compressedImage}/system.raw.zst"
+            BMAP_FILE="${compressedImage}/system.bmap"
 
-            # 3. 安装预构建的目标系统闭包
-            echo ">> Installing NixOS closure to /mnt..."
-            nixos-install \
-              --system ${targetToplevel} \
-              --no-root-passwd \
-              --no-channel-copy
+            echo ">> Writing raw image to ${targetDisk} using bmaptool..."
+            if [ -f "$BMAP_FILE" ]; then
+              bmaptool copy --bmap "$BMAP_FILE" "$RAW_IMAGE" "${targetDisk}"
+            else
+              echo ">> Bmap file not found, falling back to direct zstd streaming..."
+              zstd -dc "$RAW_IMAGE" | dd of="${targetDisk}" bs=4M iflag=fullblock oflag=direct status=progress conv=fsync
+            fi
+
+            # 3. 修复 GPT 备份表至物理磁盘末端
+            echo ">> Relocating Backup GPT table to the end of the disk..."
+            sgdisk -e "${targetDisk}" || true
+            partprobe "${targetDisk}" || true
+            sync
 
             echo "======================================================"
-            echo " Installation Finished Successfully!"
-            echo " System will reboot into ${hostName} in 10 seconds..."
+            echo " Installation Finished Successfully in Seconds!"
+            echo " System will reboot into ${hostName} in 5 seconds..."
             echo "======================================================"
-            sleep 10
+            sleep 5
             reboot
           '';
         };
