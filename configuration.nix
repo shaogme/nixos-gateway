@@ -243,15 +243,15 @@ in
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = ''
-        ${pkgs.iproute2}/bin/ip rule add fwmark 1 lookup 100
-        ${pkgs.iproute2}/bin/ip route add local default dev lo table 100
-      '';
-      ExecStop = ''
-        ${pkgs.iproute2}/bin/ip rule del fwmark 1 lookup 100
-        ${pkgs.iproute2}/bin/ip rule del local default dev lo table 100
-      '';
     };
+    script = ''
+      ${pkgs.iproute2}/bin/ip rule add fwmark 1 lookup 100
+      ${pkgs.iproute2}/bin/ip route add local default dev lo table 100
+    '';
+    postStop = ''
+      ${pkgs.iproute2}/bin/ip rule del fwmark 1 lookup 100 || true
+      ${pkgs.iproute2}/bin/ip route del local default dev lo table 100 || true
+    '';
   };
 
   # =========================================================================
