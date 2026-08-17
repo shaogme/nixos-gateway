@@ -57,6 +57,7 @@ let
           };
 
           path = with pkgs; [
+            config.nix.package
             diskoScript
             nixos-install-tools
             util-linux
