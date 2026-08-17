@@ -27,10 +27,15 @@ pkgs.runCommand "static-check" { } ''
   [[ "${toString cfg.boot.kernel.sysctl."net.ipv4.ip_forward"}" == "1" ]] || { echo "ipv4 forwarding missing"; exit 1; }
   [[ "${toString cfg.boot.kernel.sysctl."net.ipv6.conf.all.forwarding"}" == "1" ]] || { echo "ipv6 forwarding missing"; exit 1; }
 
-  # 2. 验证系统代理设置与更新服务代理
+  # 2. 验证系统代理设置与自动更新/同步配置
   [[ "${cfg.networking.proxy.default}" == "socks5://127.0.0.1:2080" ]] || { echo "proxy mismatch"; exit 1; }
   [[ "${cfg.systemd.services.nix-daemon.environment.ALL_PROXY}" == "socks5://127.0.0.1:2080" ]] || { echo "nix-daemon proxy missing"; exit 1; }
   [[ "${cfg.base.update.proxy}" == "socks5://127.0.0.1:2080" ]] || { echo "base.update.proxy mismatch"; exit 1; }
+  [[ "${toString cfg.base.update.sync.enable}" == "1" ]] || { echo "base.update.sync not enabled"; exit 1; }
+  [[ "${cfg.base.update.sync.url}" == "https://github.com/shaogme/nixos-gateway" ]] || { echo "base.update.sync.url mismatch"; exit 1; }
+  [[ "${cfg.base.update.sync.branch}" == "main" ]] || { echo "base.update.sync.branch mismatch"; exit 1; }
+  [[ "${toString cfg.base.update.upgrade.enable}" == "1" ]] || { echo "base.update.upgrade not enabled"; exit 1; }
+  [[ "${toString cfg.system.autoUpgrade.enable}" == "1" ]] || { echo "system.autoUpgrade not enabled"; exit 1; }
 
   # 3. 验证 base 优化项 (认证、内存、容器、维护、网络)
   [[ "${toString cfg.base.enable}" == "1" ]] || { echo "base module not enabled"; exit 1; }

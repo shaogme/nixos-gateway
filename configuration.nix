@@ -69,10 +69,12 @@ in
         olderThan = "7d";
       };
       sync = {
-        enable = false; # 如需从远程仓库定时拉取配置可设为 true 并指定 url
+        enable = true;
+        url = "https://github.com/shaogme/nixos-gateway";
+        branch = "main";
       };
       upgrade = {
-        enable = false;
+        enable = true;
       };
     };
   };

@@ -113,18 +113,22 @@ in {
         no_proxy = config.networking.proxy.noProxy;
       };
       script = ''
-        if [ ! -d "${cfg.sync.targetPath}/.git" ]; then
-          echo "Initializing clone repository: ${cfg.sync.url} -> ${cfg.sync.targetPath}"
-          mkdir -p "$(dirname "${cfg.sync.targetPath}")"
-          git clone "${cfg.sync.url}" "${cfg.sync.targetPath}"
+        mkdir -p "${cfg.sync.targetPath}"
+        cd "${cfg.sync.targetPath}"
+        
+        if [ ! -d ".git" ]; then
+          echo "Initializing Git repository in ${cfg.sync.targetPath}..."
+          git init -b "${cfg.sync.branch}"
+          git remote add origin "${cfg.sync.url}"
+        else
+          git remote set-url origin "${cfg.sync.url}" || true
         fi
         
-        cd "${cfg.sync.targetPath}"
-        echo "Syncing branch ${cfg.sync.branch}..."
+        echo "Syncing branch ${cfg.sync.branch} from ${cfg.sync.url}..."
+        git fetch origin "${cfg.sync.branch}"
         
         if [ "${if cfg.sync.destructive then "1" else "0"}" = "1" ]; then
           echo "Performing destructive sync (hard reset)..."
-          git fetch origin
           git reset --hard "origin/${cfg.sync.branch}"
           git clean -fd
         else
@@ -146,12 +150,16 @@ in {
       };
     };
 
-    # 为升级服务注入代理环境变量
-    systemd.services.nixos-upgrade.environment = mkIf (cfg.upgrade.enable && cfg.proxy != null) {
-      http_proxy = cfg.proxy;
-      https_proxy = cfg.proxy;
-      ALL_PROXY = cfg.proxy;
-      no_proxy = config.networking.proxy.noProxy;
+    # 为升级服务注入代理环境变量与依赖关系
+    systemd.services.nixos-upgrade = mkIf cfg.upgrade.enable {
+      wants = mkIf cfg.sync.enable [ "sync-config.service" ];
+      after = mkIf cfg.sync.enable [ "sync-config.service" ];
+      environment = mkIf (cfg.proxy != null) {
+        http_proxy = cfg.proxy;
+        https_proxy = cfg.proxy;
+        ALL_PROXY = cfg.proxy;
+        no_proxy = config.networking.proxy.noProxy;
+      };
     };
 
     # --- 自动升级配置 ---
