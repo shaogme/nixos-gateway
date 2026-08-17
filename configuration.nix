@@ -21,6 +21,17 @@ in
   base = {
     enable = true;
 
+    # 用户认证与 SSH 密钥安全
+    auth = {
+      root = {
+        mode = "default";
+        initialHashedPassword = "$6$msMQKMhdVSF/pecx$yAZ/5Chw8S7QAGGqtxNRmGqyZUC.DcKXvpiKaMW3HQ0Keo./W82qRzLQgqSvHP9gnx.YZMBDyVgIJpLi4yjxQ.";
+        authorizedKeys = [
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJcOjVWQqIBNn/JyKBufWpubJuqYR2+5DQI/Q4b25HR/ ed25519 256-20260818"
+        ];
+      };
+    };
+
     # 内存与内核优化（启用 MGLRU、zramSwap (zstd)、优化 swappiness 与缓存压力）
     memory.mode = "balanced";
 

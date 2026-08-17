@@ -32,8 +32,11 @@ pkgs.runCommand "static-check" { } ''
   [[ "${cfg.systemd.services.nix-daemon.environment.ALL_PROXY}" == "socks5://127.0.0.1:2080" ]] || { echo "nix-daemon proxy missing"; exit 1; }
   [[ "${cfg.base.update.proxy}" == "socks5://127.0.0.1:2080" ]] || { echo "base.update.proxy mismatch"; exit 1; }
 
-  # 3. 验证 base 优化项 (内存、容器、维护、网络)
+  # 3. 验证 base 优化项 (认证、内存、容器、维护、网络)
   [[ "${toString cfg.base.enable}" == "1" ]] || { echo "base module not enabled"; exit 1; }
+  [[ "${cfg.users.users.root.initialHashedPassword}" == "$6$msMQKMhdVSF/pecx$yAZ/5Chw8S7QAGGqtxNRmGqyZUC.DcKXvpiKaMW3HQ0Keo./W82qRzLQgqSvHP9gnx.YZMBDyVgIJpLi4yjxQ." ]] || { echo "root initialHashedPassword mismatch"; exit 1; }
+  [[ "${toString cfg.users.users.root.openssh.authorizedKeys.keys}" == *"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJcOjVWQqIBNn/JyKBufWpubJuqYR2+5DQI/Q4b25HR/ ed25519 256-20260818"* ]] || { echo "root ssh authorized keys mismatch"; exit 1; }
+  [[ "${cfg.services.openssh.settings.PermitRootLogin}" == "prohibit-password" ]] || { echo "PermitRootLogin mismatch"; exit 1; }
   [[ "${toString cfg.zramSwap.enable}" == "1" ]] || { echo "zramSwap not enabled"; exit 1; }
   [[ "${cfg.zramSwap.algorithm}" == "zstd" ]] || { echo "zram algorithm mismatch"; exit 1; }
   [[ "${toString cfg.virtualisation.podman.enable}" == "1" ]] || { echo "podman not enabled"; exit 1; }
