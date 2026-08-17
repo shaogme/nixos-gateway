@@ -175,7 +175,7 @@ nix-build tests/vmtest.nix --no-out-link
 运行以下命令构建无人值守安装镜像：
 
 ```bash
-nix-build iso.nix -o result
+nix-build iso.nix --arg hostPath ./. -o result
 ```
 
 构建完成后，生成的 `.iso` 镜像文件位于 `result/iso/` 目录下。

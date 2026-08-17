@@ -1,7 +1,7 @@
 let
   sources = import ./npins;
 in
-{ config ? null, pkgs ? import sources.nixpkgs { }, lib ? pkgs.lib, ... }:
+{ config, pkgs, lib, ... }:
 let
   dotExts = import sources.dot-exts { inherit pkgs; };
 in

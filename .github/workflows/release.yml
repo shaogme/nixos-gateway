@@ -75,6 +75,7 @@ jobs:
 
           echo "Building Auto-Installer ISO for $HOST_NAME..."
           nix-build iso.nix \
+            --arg hostPath ./. \
             --option substituters "${{ env.CACHIX_SUBSTITUTERS }}" \
             --option trusted-public-keys "${{ env.CACHIX_PUBLIC_KEYS }}" \
             -o result
