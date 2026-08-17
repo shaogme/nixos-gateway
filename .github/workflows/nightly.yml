@@ -1,15 +1,24 @@
-name: Nightly Release
+name: Nightly Release System Images
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build and Test NixOS Configuration"]
+    types:
+      - completed
     branches:
       - main
-    paths:
-      - 'npins/sources.json'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  nightly:
+  release:
+    permissions:
+      contents: write
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/release.yml
     with:
       is_nightly: true
+      ref: ${{ github.event.workflow_run.head_sha || github.sha }}
