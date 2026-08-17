@@ -1,0 +1,15 @@
+name: Nightly Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'npins/sources.json'
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    uses: ./.github/workflows/release.yml
+    with:
+      is_nightly: true

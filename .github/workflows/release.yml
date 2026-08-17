@@ -1,0 +1,254 @@
+name: Reusable Release Workflow
+
+on:
+  workflow_call:
+    inputs:
+      is_nightly:
+        type: boolean
+        required: false
+        default: false
+        description: 'Whether this is a nightly release'
+      version:
+        type: string
+        required: false
+        default: ''
+        description: 'Release version for manually triggered release'
+      ref:
+        type: string
+        required: false
+        default: ''
+        description: 'Git commit SHA or reference to build'
+  workflow_dispatch:
+    inputs:
+      is_nightly:
+        type: boolean
+        required: false
+        default: false
+        description: 'Whether this is a nightly release'
+      version:
+        type: string
+        required: false
+        default: ''
+        description: 'Release version'
+
+env:
+  CACHIX_SUBSTITUTERS: https://cache.nixos.org https://attic.xuyh0120.win/lantian
+  CACHIX_PUBLIC_KEYS: cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@master
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          enable_kvm: true
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            system-features = kvm big-parallel nixos-test
+            substituters = ${{ env.CACHIX_SUBSTITUTERS }}
+            trusted-public-keys = ${{ env.CACHIX_PUBLIC_KEYS }}
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -la /dev/kvm || true
+
+      - name: Install compression tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y p7zip-full zstd
+
+      - name: Build System Image
+        id: build_image
+        run: |
+          HOST_NAME="nixos-gateway"
+          echo "host_name=${HOST_NAME}" >> $GITHUB_OUTPUT
+
+          echo "Building Auto-Installer ISO for $HOST_NAME..."
+          nix-build iso.nix \
+            --option substituters "${{ env.CACHIX_SUBSTITUTERS }}" \
+            --option trusted-public-keys "${{ env.CACHIX_PUBLIC_KEYS }}" \
+            -o result
+          echo "image_type=iso" >> $GITHUB_OUTPUT
+
+      - name: Prepare and Compress Image
+        id: prep
+        run: |
+          HOST_NAME="${{ steps.build_image.outputs.host_name }}"
+          IMAGE_TYPE="${{ steps.build_image.outputs.image_type }}"
+          echo "host_name=${HOST_NAME}" >> $GITHUB_OUTPUT
+          MAX_SIZE=$((1900 * 1024 * 1024))
+
+          SRC_FILE=$(find -L result -name "*.iso" 2>/dev/null | head -n 1)
+          if [ -z "$SRC_FILE" ] || [ ! -f "$SRC_FILE" ]; then
+            # 如果是 raw 镜像输出做兜底
+            SRC_FILE=$(find -L result -name "*.raw" 2>/dev/null | head -n 1)
+          fi
+
+          if [ -z "$SRC_FILE" ] || [ ! -f "$SRC_FILE" ]; then
+            echo "ERROR: Output image not found in result directory!"
+            exit 1
+          fi
+
+          if [[ "$SRC_FILE" == *.iso ]]; then
+            TARGET_FILE="${HOST_NAME}.iso"
+            cp "$SRC_FILE" "$TARGET_FILE"
+
+            # iso 直接压缩成 .7z
+            ARCHIVE_NAME="${HOST_NAME}.7z"
+            7z a -mx=9 "$ARCHIVE_NAME" "$TARGET_FILE"
+
+            FILE_SIZE=$(stat -c%s "$ARCHIVE_NAME")
+            if [ "$FILE_SIZE" -gt "$MAX_SIZE" ]; then
+              echo "File $ARCHIVE_NAME size ($FILE_SIZE bytes) exceeds limit ($MAX_SIZE bytes). Re-compressing into 1900M 7z split volumes..."
+              rm -f "$ARCHIVE_NAME"
+              7z a -v1900m -mx=9 "$ARCHIVE_NAME" "$TARGET_FILE"
+            fi
+            rm -f "$TARGET_FILE"
+          else
+            TARGET_FILE="${HOST_NAME}.raw"
+            cp "$SRC_FILE" "$TARGET_FILE"
+
+            # raw 压缩成 .tar.zst
+            ARCHIVE_NAME="${HOST_NAME}.tar.zst"
+            tar -I "zstd -19 -T0" -cf "$ARCHIVE_NAME" "$TARGET_FILE"
+            rm -f "$TARGET_FILE"
+
+            FILE_SIZE=$(stat -c%s "$ARCHIVE_NAME")
+            if [ "$FILE_SIZE" -gt "$MAX_SIZE" ]; then
+              echo "File $ARCHIVE_NAME size ($FILE_SIZE bytes) exceeds limit ($MAX_SIZE bytes). Splitting into 1900M parts..."
+              split -b 1900M -d -a 2 "$ARCHIVE_NAME" "${ARCHIVE_NAME}.part"
+              rm -f "$ARCHIVE_NAME"
+            fi
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: image-${{ steps.prep.outputs.host_name }}
+          path: |
+            ${{ steps.prep.outputs.host_name }}.tar.zst*
+            ${{ steps.prep.outputs.host_name }}.7z*
+          if-no-files-found: error
+
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@main
+        with:
+          pattern: image-*
+          merge-multiple: true
+
+      - name: Delete Existing Nightly Release
+        if: inputs.is_nightly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          git push origin :refs/tags/nightly || true
+
+      - name: Determine Release Metadata
+        id: rel_meta
+        run: |
+          TARGET_REF="${{ inputs.ref || github.sha }}"
+          SHORT_SHA="${TARGET_REF:0:7}"
+
+          if [ "${{ inputs.is_nightly }}" = "true" ]; then
+            TAG_NAME="nightly"
+            RELEASE_NAME="Nightly Release $(date +'%Y%m%d-%H%M%S') (${SHORT_SHA})"
+            IS_PRERELEASE="true"
+            TITLE="Nightly System Images (ISO) Build"
+          elif [ "${{ github.ref_name }}" = "pre-release" ]; then
+            TAG_NAME="pre-release-latest"
+            RELEASE_NAME="Pre-Release $(date +'%Y%m%d-%H%M%S')-${SHORT_SHA}"
+            IS_PRERELEASE="true"
+            TITLE="System Images (ISO) Pre-Release"
+          else
+            VERSION="${{ inputs.version || github.ref_name }}"
+            TAG_NAME="${VERSION}"
+            RELEASE_NAME="Release ${VERSION} ($(date +'%Y%m%d'))"
+            IS_PRERELEASE="false"
+            TITLE="System Images (ISO) Release"
+          fi
+
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "release_name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
+          echo "is_prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
+          echo "title=${TITLE}" >> $GITHUB_OUTPUT
+
+      - name: Generate Release Body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${{ steps.rel_meta.outputs.title }}" > release_body.md
+          echo "" >> release_body.md
+          echo "**Commit:** \`${{ inputs.ref || github.sha }}\`" >> release_body.md
+          echo "**Date:** \`$(date -u +'%Y-%m-%d %H:%M:%S UTC')\`" >> release_body.md
+          echo "" >> release_body.md
+          echo "**Artifacts:**" >> release_body.md
+          for f in *.tar.zst* *.7z*; do
+            if [ -f "$f" ]; then
+              echo "- \`$f\`" >> release_body.md
+            fi
+          done
+
+          if ls *.part* >/dev/null 2>&1; then
+            echo "" >> release_body.md
+            echo "> **Note:** Files with \`.part*\` extensions were split because they exceeded GitHub's 2GB file limit." >> release_body.md
+            echo "> To restore the original file: \`cat <filename>.tar.zst.part* > <filename>.tar.zst\`" >> release_body.md
+          fi
+
+          if ls *.7z.00* >/dev/null 2>&1; then
+            echo "" >> release_body.md
+            echo "> **Note:** Files with \`.7z.00*\` extensions were split using 7-Zip multi-volume because they exceeded GitHub's 2GB file limit." >> release_body.md
+            echo "> To restore the original file: extract with 7-Zip (\`7z x <filename>.7z.001\`)." >> release_body.md
+          fi
+
+          if [ "${{ inputs.is_nightly }}" = "true" ]; then
+            NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="${{ steps.rel_meta.outputs.tag_name }}" \
+              -f target_commitish="${{ inputs.ref || github.sha }}" \
+              --jq .body 2>/dev/null || true)
+            if [ -n "$NOTES" ]; then
+              echo "" >> release_body.md
+              echo "<details>" >> release_body.md
+              echo "<summary>Commits</summary>" >> release_body.md
+              echo "" >> release_body.md
+              echo "$NOTES" >> release_body.md
+              echo "" >> release_body.md
+              echo "</details>" >> release_body.md
+            fi
+          fi
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.rel_meta.outputs.tag_name }}
+          target_commitish: ${{ inputs.ref || github.sha }}
+          name: ${{ steps.rel_meta.outputs.release_name }}
+          body_path: release_body.md
+          files: |
+            *.tar.zst
+            *.tar.zst.part*
+            *.7z
+            *.7z.*
+          prerelease: ${{ steps.rel_meta.outputs.is_prerelease == 'true' }}
+          generate_release_notes: ${{ !inputs.is_nightly }}

@@ -1,0 +1,25 @@
+{
+  "pins": {
+    "dot-exts": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "shaogme",
+        "repo": "dot-exts"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "ef60b2973150d020bddeced2a1e00f6785e4b3b0",
+      "url": "https://github.com/shaogme/dot-exts/archive/ef60b2973150d020bddeced2a1e00f6785e4b3b0.tar.gz",
+      "hash": "sha256-Ekv/naKyGJlpZ7qAYvRo70mDzs7jZcFFPdybyziK0TM="
+    },
+    "nixpkgs": {
+      "type": "Channel",
+      "name": "nixpkgs-unstable",
+      "artifact": "nixexprs.tar.xz",
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1055316.54ba4bcec404/nixexprs.tar.xz",
+      "hash": "sha256-qAju19pU49gKFuFJZGwlFaLXuxTxfZfJM2gz+nLq+gs="
+    }
+  },
+  "version": 8
+}
