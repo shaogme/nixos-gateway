@@ -137,11 +137,10 @@ in
           tag = "tproxy-in";
           listen = "::";
           listen_port = 7893;
-          sniff = true;
         }
-        # DNS 入站：监听 53 端口，接管局域网及本机的 DNS 查询
+        # 直连入站：监听 53 端口，接收发往本机的 DNS 请求并通过 hijack-dns 劫持
         {
-          type = "dns";
+          type = "direct";
           tag = "dns-in";
           listen = "::";
           listen_port = 53;
@@ -161,6 +160,7 @@ in
         {
           type = "direct";
           tag = "direct";
+          domain_resolver = "local-dns";
         }
       ];
 
@@ -170,21 +170,16 @@ in
           # 境外代理解析（DoH）
           {
             tag = "remote-dns";
-            address = "https://1.1.1.1/dns-query";
+            type = "https";
+            server = "1.1.1.1";
             detour = "socks-out";
           }
           # 国内直连解析
           {
             tag = "local-dns";
-            address = "223.5.5.5";
+            type = "udp";
+            server = "223.5.5.5";
             detour = "direct";
-          }
-        ];
-        rules = [
-          # 访问出站规则为 direct 的域名使用国内 DNS
-          {
-            outbound = "direct";
-            server = "local-dns";
           }
         ];
         final = "remote-dns";
@@ -194,6 +189,10 @@ in
       route = {
         auto_detect_interface = true;
         rules = [
+          # 流量嗅探以提取域名
+          {
+            action = "sniff";
+          }
           # DNS 请求直接交给内建 DNS 引擎处理
           {
             protocol = "dns";
@@ -201,7 +200,7 @@ in
           }
           # 局域网私有 IP 直连
           {
-            geoip = [ "private" ];
+            ip_is_private = true;
             outbound = "direct";
           }
           # 其余流量全走 SOCKS 出站
@@ -238,7 +237,8 @@ in
   # 创建路由表策略，使被 mark 1 的 TProxy 标记流量能被本地正确接收
   systemd.services.tproxy-routing = {
     description = "Set up TProxy routing rule and table";
-    after = [ "network-pre.target" ];
+    after = [ "network.target" ];
+    wants = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
