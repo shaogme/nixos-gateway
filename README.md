@@ -16,10 +16,11 @@
   - 集成 CachyOS 优化内核，默认启用 BBRv3 拥塞控制算法与 CAKE 队列管理机制。
   - 基于 Disko 管理 Btrfs 磁盘布局，并开启 zstd 透明压缩。
 
-- **模块化基座设计 (`modules/base`)**
+- **模块化基座设计 (`dot-base`)**
   - **内存调优**：提供 Aggressive / Balanced / Conservative 多档位配置，启用 MGLRU 与 zstd zramSwap。
   - **容器生态**：支持 Podman 与 Docker 容器引擎，提供 Rootless 容器支持、容器 DNS 解析与防火墙自动集成。
-  - **统一网络**：基于 systemd-networkd 统一抽象网络接口、静态 IP、IPv6 DHCP、路由规则及协议栈优先级。
+  - **网络管理**：基于 systemd-networkd 统一抽象网络接口、静态 IP、IPv6 DHCP、路由规则及协议栈优先级。
+  - **代理集成**：全局系统代理配置与 nix-daemon / 容器环境自动注入。
   - **自动维护**：内置 NixOS 垃圾回收（GC）、定时升级与远程 Git 配置同步。
 
 - **全自动无人值守安装**
@@ -48,17 +49,9 @@
 │       ├── usage.md            # npins 依赖引入与覆盖指南
 │       └── testing.md          # 静态检查与 VM 测试指南
 │
-├── modules/                    # 自定义 NixOS 模块库
-│   └── base/                   # 系统基础模块
-│       ├── default.nix         # 基础模块总入口与通用设置
-│       ├── container.nix       # 容器引擎模块 (Podman / Docker)
-│       ├── memory.nix          # 内存与内核参数调优模块
-│       ├── network.nix         # 统一 systemd-networkd 网络抽象模块
-│       └── update.nix          # 自动维护、GC 与 Git 同步模块
-│
 ├── npins/                      # npins 依赖锁定配置
 │   ├── default.nix             # 依赖加载入口（工具自动生成）
-│   └── sources.json            # 依赖锁定源定义 (nixpkgs, dot-exts 等)
+│   └── sources.json            # 依赖锁定源定义 (nixpkgs, dot-base, dot-exts 等)
 │
 └── tests/                      # 自动化测试套件
     ├── default.nix             # 测试入口
@@ -122,7 +115,7 @@ ssh root@localhost -p 2222
 - **网卡与 IP 地址分配**：
 
   ```nix
-  base.network.interfaces.eth0 = {
+  base.hardware.network.interfaces.eth0 = {
     dhcp = "ipv6";
     ipv4 = {
       addresses = [
@@ -136,9 +129,9 @@ ssh root@localhost -p 2222
   };
   ```
 
-- **上游代理端口**：
+- **上游代理与系统代理**：
 
-  默认上游 SOCKS5 代理地址为 `127.0.0.1:2080`。如需修改，请调整 `networking.proxy`、`base.update.proxy` 及 `services.sing-box` 中的对应端口。
+  默认上游 SOCKS5 代理地址为 `127.0.0.1:2080`。可通过 `base.proxy.default` 及 `services.sing-box` 进行配置。
 
 ---
 
@@ -194,7 +187,7 @@ nix-build iso.nix --arg hostPath ./. -o result
 
 ## 模块配置参考
 
-### Base 基础模块 (`modules/base`)
+### Base 基础模块 (`dot-base`)
 
 | 模块 | 配置项 | 说明 |
 | :--- | :--- | :--- |
@@ -202,7 +195,8 @@ nix-build iso.nix --arg hostPath ./. -o result
 | **内存优化** | `base.memory.mode` | 内存优化模式：`aggressive` (<1G)、`balanced` (<2G)、`conservative` (>=4G)、`none` |
 | **容器引擎** | `base.container.podman` | 启用 Podman 引擎、Docker 兼容套接字与容器 DNS 自动解析 |
 | **容器引擎** | `base.container.docker` | 启用 Docker 守护进程与 Rootless 支持 |
-| **网络管理** | `base.network` | 启用 systemd-networkd 统一网络抽象、多网卡配置与 DNS 解析策略 |
+| **系统代理** | `base.proxy` | 全局代理配置与 nix-daemon / 容器环境自动注入 |
+| **硬件网络** | `base.hardware.network` | 启用 systemd-networkd 统一网络抽象、多网卡配置与 DNS 解析策略 |
 | **自动维护** | `base.update` | 启用 Nix 垃圾回收 (GC)、系统自动升级及远程 Git 配置同步 |
 
 ### 扩展模块 (`dot-exts`)

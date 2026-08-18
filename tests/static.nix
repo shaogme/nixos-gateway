@@ -30,12 +30,13 @@ pkgs.runCommand "static-check" { } ''
   # 2. 验证系统代理设置与自动更新/同步配置
   [[ "${cfg.networking.proxy.default}" == "socks5://127.0.0.1:2080" ]] || { echo "proxy mismatch"; exit 1; }
   [[ "${cfg.systemd.services.nix-daemon.environment.ALL_PROXY}" == "socks5://127.0.0.1:2080" ]] || { echo "nix-daemon proxy missing"; exit 1; }
-  [[ "${cfg.base.update.proxy}" == "socks5://127.0.0.1:2080" ]] || { echo "base.update.proxy mismatch"; exit 1; }
+  [[ "${toString cfg.base.proxy.enable}" == "1" ]] || { echo "base.proxy not enabled"; exit 1; }
   [[ "${toString cfg.base.update.sync.enable}" == "1" ]] || { echo "base.update.sync not enabled"; exit 1; }
   [[ "${cfg.base.update.sync.url}" == "https://github.com/shaogme/nixos-gateway" ]] || { echo "base.update.sync.url mismatch"; exit 1; }
   [[ "${cfg.base.update.sync.branch}" == "main" ]] || { echo "base.update.sync.branch mismatch"; exit 1; }
   [[ "${toString cfg.base.update.upgrade.enable}" == "1" ]] || { echo "base.update.upgrade not enabled"; exit 1; }
   [[ "${toString cfg.system.autoUpgrade.enable}" == "1" ]] || { echo "system.autoUpgrade not enabled"; exit 1; }
+  [[ "${cfg.base.update.upgrade.type}" == "legacy" ]] || { echo "upgrade type mismatch"; exit 1; }
 
   # 3. 验证 base 优化项 (认证、内存、容器、维护、网络)
   [[ "${toString cfg.base.enable}" == "1" ]] || { echo "base module not enabled"; exit 1; }
@@ -46,8 +47,8 @@ pkgs.runCommand "static-check" { } ''
   [[ "${cfg.zramSwap.algorithm}" == "zstd" ]] || { echo "zram algorithm mismatch"; exit 1; }
   [[ "${toString cfg.virtualisation.podman.enable}" == "1" ]] || { echo "podman not enabled"; exit 1; }
 
-  # 4. 验证 network (systemd-networkd) 配置
-  [[ "${toString cfg.base.network.enable}" == "1" ]] || { echo "network not enabled"; exit 1; }
+  # 4. 验证 hardware.network (systemd-networkd) 配置
+  [[ "${toString cfg.base.hardware.network.enable}" == "1" ]] || { echo "network not enabled"; exit 1; }
   [[ "${toString cfg.systemd.network.enable}" == "1" ]] || { echo "systemd.network not enabled"; exit 1; }
   [[ "${cfg.systemd.network.networks."10-eth0".networkConfig.DHCP}" == "ipv6" ]] || { echo "dhcp ipv6 mismatch"; exit 1; }
   [[ "${toString cfg.systemd.network.networks."10-eth0".address}" == *"192.168.2.5/24"* ]] || { echo "ipv4 address mismatch"; exit 1; }

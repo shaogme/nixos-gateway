@@ -1,5 +1,18 @@
 {
   "pins": {
+    "dot-base": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "shaogme",
+        "repo": "dot-base"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "044b5d6e2a50cae7b0e4076f05235bdc5b5b6e90",
+      "url": "https://github.com/shaogme/dot-base/archive/044b5d6e2a50cae7b0e4076f05235bdc5b5b6e90.tar.gz",
+      "hash": "sha256-BiG03KIVfYr7AqxvfhAZzyRFvVlexDPI7cRS3h4bBR4="
+    },
     "dot-exts": {
       "type": "Git",
       "repository": {

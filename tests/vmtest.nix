@@ -5,11 +5,12 @@ in
 pkgs.testers.nixosTest {
   name = "gateway-vm-test";
 
-  nodes.machine = { config, pkgs, ... }: {
+  nodes.machine = { config, pkgs, lib, ... }: {
     imports = [ ../configuration.nix ];
 
     # Minimal VM configuration
     virtualisation.memorySize = 1024;
+    networking.usePredictableInterfaceNames = lib.mkForce false;
   };
 
   testScript = ''

@@ -4,13 +4,14 @@ in
 { config, pkgs, lib, ... }:
 let
   dotExts = import sources.dot-exts { inherit pkgs; };
+  dotBase = import sources.dot-base { inherit pkgs; };
 in
 {
   # =========================================================================
   # 模块导入
   # =========================================================================
   imports = [
-    ./modules/base
+    dotBase.nixosModules.default
     dotExts.nixosModules.hardware.disk.btrfs
     dotExts.nixosModules.kernel.cachyos
   ];
@@ -40,8 +41,14 @@ in
       podman.enable = true;
     };
 
+    # 系统代理设置（由 dot-base/core/proxy.nix 自动配置系统代理及 nix-daemon 注入）
+    proxy = {
+      enable = true;
+      default = "socks5://127.0.0.1:2080";
+    };
+
     # 统一网络管理 (systemd-networkd)：IPv4 固定 192.168.2.5/24，IPv6 DHCP
-    network = {
+    hardware.network = {
       enable = true;
       preference = "ipv4";
       interfaces.eth0 = {
@@ -58,11 +65,9 @@ in
       };
     };
 
-    # 系统自动维护、GC 与 Git 同步（支持代理）
+    # 系统自动维护、GC 与 Git 同步
     update = {
       enable = true;
-      # 代理设置默认继承 networking.proxy.default，也可显式指定
-      proxy = "socks5://127.0.0.1:2080";
       gc = {
         enable = true;
         dates = "weekly";
@@ -75,6 +80,7 @@ in
       };
       upgrade = {
         enable = true;
+        type = "legacy";
       };
     };
   };
@@ -124,23 +130,7 @@ in
   services.resolved.enable = false;
 
   # =========================================================================
-  # 4. NixOS 系统自身代理设置（系统更新、nix-daemon 下载等）
-  # =========================================================================
-  networking.proxy = {
-    default = "socks5://127.0.0.1:2080";
-    # 排除本地回环与常见局域网网段，避免循环代理
-    noProxy = "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12";
-  };
-
-  # 显式给 nix-daemon 注入代理环境变量，保证 nix-shell / nixos-rebuild 顺利走代理
-  systemd.services.nix-daemon.environment = {
-    http_proxy = "socks5://127.0.0.1:2080";
-    https_proxy = "socks5://127.0.0.1:2080";
-    ALL_PROXY = "socks5://127.0.0.1:2080";
-  };
-
-  # =========================================================================
-  # 5. sing-box 配置（TProxy 流量转发 + DNS 服务）
+  # 4. sing-box 配置（TProxy 流量转发 + DNS 服务）
   # =========================================================================
   services.sing-box = {
     enable = true;
@@ -230,7 +220,7 @@ in
   };
 
   # =========================================================================
-  # 6. nftables 与 TProxy 路由策略配置
+  # 5. nftables 与 TProxy 路由策略配置
   # =========================================================================
   # 使用 nftables 将发往旁路由的流量重定向到 sing-box 的 7893 TProxy 端口
   networking.nftables = {
@@ -271,7 +261,7 @@ in
   };
 
   # =========================================================================
-  # 7. 系统工具包
+  # 6. 系统工具包
   # =========================================================================
   environment.systemPackages = with pkgs; [
     sing-box
