@@ -62,7 +62,31 @@ pkgs.runCommand "static-check" { } ''
   # 6. 验证 sing-box 服务
   [[ "${toString cfg.services.sing-box.enable}" == "1" ]] || { echo "sing-box not enabled"; exit 1; }
 
-  # 7. 验证 nftables 与 TProxy 路由服务
+  # 7. 验证 S-UI 容器服务与端口防火墙配置
+  [[ "${if cfg.base.app.proxy.s-ui.enable then "true" else "false"}" == "true" ]] || { echo "s-ui not enabled"; exit 1; }
+  [[ "${if cfg.base.app.proxy.s-ui.nginx.enable then "true" else "false"}" == "false" ]] || { echo "s-ui nginx should be disabled"; exit 1; }
+  [[ "${if cfg.base.app.proxy.s-ui.ports.subscription.enable then "true" else "false"}" == "false" ]] || { echo "s-ui subscription port should be disabled"; exit 1; }
+  [[ "${if cfg.base.app.proxy.s-ui.ports.panel.firewall.open then "true" else "false"}" == "true" ]] || { echo "s-ui panel firewall.open should be enabled"; exit 1; }
+  [[ "${toString cfg.base.app.proxy.s-ui.extraPorts.socks5.port}" == "2080" ]] || { echo "s-ui socks5 extraPort mismatch"; exit 1; }
+  [[ "${if cfg.base.app.proxy.s-ui.extraPorts.socks5.firewall.open then "true" else "false"}" == "false" ]] || { echo "s-ui socks5 firewall.open should be disabled"; exit 1; }
+  [[ "${cfg.virtualisation.oci-containers.containers.s-ui.image}" == "docker.io/alireza7/s-ui:latest" ]] || { echo "s-ui container image mismatch"; exit 1; }
+  [[ "${toString cfg.virtualisation.oci-containers.containers.s-ui.extraOptions}" == *"--network=host"* ]] || { echo "s-ui network host missing"; exit 1; }
+  [[ "${cfg.virtualisation.oci-containers.containers.s-ui.environment.http_proxy}" == "" ]] || { echo "s-ui http_proxy should be empty (disabled)"; exit 1; }
+  [[ "${cfg.virtualisation.oci-containers.containers.s-ui.environment.ALL_PROXY}" == "" ]] || { echo "s-ui ALL_PROXY should be empty (disabled)"; exit 1; }
+
+  # 8. 验证防火墙规则与 TProxy 放行策略
+  [[ "${if builtins.elem 53 cfg.networking.firewall.allowedTCPPorts then "1" else "0"}" == "1" ]] || { echo "port 53 missing from allowedTCPPorts"; exit 1; }
+  [[ "${if builtins.elem 2095 cfg.networking.firewall.allowedTCPPorts then "1" else "0"}" == "1" ]] || { echo "port 2095 (s-ui panel) missing from allowedTCPPorts"; exit 1; }
+  [[ "${if builtins.elem 7893 cfg.networking.firewall.allowedTCPPorts then "1" else "0"}" == "0" ]] || { echo "port 7893 should not be in allowedTCPPorts"; exit 1; }
+  [[ "${if builtins.elem 2080 cfg.networking.firewall.allowedTCPPorts then "1" else "0"}" == "0" ]] || { echo "port 2080 should not be in allowedTCPPorts"; exit 1; }
+  [[ "${if builtins.elem 2096 cfg.networking.firewall.allowedTCPPorts then "1" else "0"}" == "0" ]] || { echo "port 2096 should not be in allowedTCPPorts"; exit 1; }
+  [[ "${if builtins.elem 53 cfg.networking.firewall.allowedUDPPorts then "1" else "0"}" == "1" ]] || { echo "port 53 missing from allowedUDPPorts"; exit 1; }
+  [[ "${if builtins.elem 2095 cfg.networking.firewall.allowedUDPPorts then "1" else "0"}" == "1" ]] || { echo "port 2095 missing from allowedUDPPorts"; exit 1; }
+  [[ "${if builtins.elem 7893 cfg.networking.firewall.allowedUDPPorts then "1" else "0"}" == "0" ]] || { echo "port 7893 should not be in allowedUDPPorts"; exit 1; }
+  [[ "${toString cfg.networking.firewall.extraInputRules}" == *"meta mark 1 accept"* ]] || { echo "extraInputRules missing meta mark 1 accept"; exit 1; }
+  [[ "${cfg.networking.firewall.checkReversePath}" == "loose" ]] || { echo "checkReversePath mismatch"; exit 1; }
+
+  # 9. 验证 nftables 与 TProxy 路由服务
   [[ "${toString cfg.networking.nftables.enable}" == "1" ]] || { echo "nftables not enabled"; exit 1; }
   [[ -n "${cfg.systemd.services.tproxy-routing.description}" ]] || { echo "tproxy-routing unit missing"; exit 1; }
 

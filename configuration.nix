@@ -1,11 +1,9 @@
 let
   sources = import ./npins;
+  dotExts = import sources.dot-exts { };
+  dotBase = import sources.dot-base { };
 in
 { config, pkgs, lib, ... }:
-let
-  dotExts = import sources.dot-exts { inherit pkgs; };
-  dotBase = import sources.dot-base { inherit pkgs; };
-in
 {
   # =========================================================================
   # 模块导入
@@ -39,6 +37,21 @@ in
     # 容器引擎优化
     container = {
       podman.enable = true;
+    };
+
+    # S-UI 代理管理面板
+    app.proxy.s-ui = {
+      enable = true;
+      nginx.enable = false;
+      ports = {
+        panel.firewall.open = true;
+        subscription.enable = false;
+      };
+      extraPorts = {
+        socks5 = {
+          port = 2080;
+        };
+      };
     };
 
     # 系统代理设置（由 dot-base/core/proxy.nix 自动配置系统代理及 nix-daemon 注入）
@@ -109,11 +122,19 @@ in
   networking = {
     hostName = "nixos-gateway";
 
-    # 开启防火墙并开放相关端口
+    # 开启防火墙并开放相关端口（S-UI panel 端口 2095 由 s-ui.ports.panel.firewall.open 自动管理）
     firewall = {
       enable = true;
-      allowedTCPPorts = [ 53 2080 7893 ];
-      allowedUDPPorts = [ 53 2080 7893 ];
+      allowedTCPPorts = [ 53 ];
+      allowedUDPPorts = [ 53 ];
+
+      # 放行被 TProxy 标记为 1 的局域网代理流量，避免被 INPUT 链拦截
+      extraInputRules = ''
+        meta mark 1 accept
+      '';
+
+      # 避免反向路径过滤 (rpfilter) 丢弃透明代理的异步/非对称路由流量
+      checkReversePath = "loose";
     };
 
     # 开启流量转发支持（旁路由必需）
